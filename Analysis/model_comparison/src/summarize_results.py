@@ -4,9 +4,10 @@ summary.md, in reading order:
   1. Best model per dataset vs TransLoc, and how much of the gain a lookup table on TransLoc's ETA already gets
   2. Error by how far away TransLoc says the bus is
   3. Share of predictions within 2 min of the actual arrival
-  4. By route, and pooled vs single-route models
-  5. Next steps
+  4. The worst predictions (error tails, and how often the bus comes earlier than predicted)
+  5. By route, and pooled vs single-route models
   6. All 15 tuned models plus 4 baselines
+Next steps live in the README (section 9).
 
 Baselines, scored on the same test split (the last two use only TransLoc's ETA and are fit on train):
 TransLoc as-is (predict delay 0), train mean, a straight line in the ETA, and a lookup table by ETA decile.
@@ -17,7 +18,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from mc_common import PREDS, RESULTS, load_features, load_model_ready, metrics
+from mc_common import PREDS, RESULTS, load_model_ready, metrics
 
 DATASETS = ["bus", "route", "combined"]
 BASELINES = ["TransLoc as-is (delay=0)", "Train mean", "Straight line in ETA", "Lookup table (ETA deciles)"]
@@ -102,7 +103,8 @@ def main():
         "**Best model** means the tuned model with the lowest test MAE on that dataset: "
         + ", ".join(f"{best[ds]['model']} for `{ds}`" for ds in DATASETS)
         + ". It is picked on the test days, so its score is slightly optimistic. "
-        "Percentages are computed from the rounded numbers shown.", "",
+        "Percentages are computed from the rounded numbers shown. Next steps are in the "
+        "[README, section 9](../README.md#9-next-steps).", "",
         "## 1. Best model vs TransLoc, and where the gain comes from", "",
         "**L, the lookup table,** is a correction built for this study, not something TransLoc provides. It looks "
         "only at TransLoc's ETA. The training rows are sorted by ETA and cut into 10 ranges with the same number of "
@@ -153,14 +155,48 @@ def main():
               "## 3. How often the prediction is within 2 minutes of the actual arrival", "",
               row("Dataset (best model)", "TransLoc's ETA", "TransLoc", "Model", "Gain"), row(*["---"] * 5), *within]
 
-    # 4. by route (combined) and pooled vs single-route models on identical test rows
+    # 4. the worst predictions
+    lines += ["", "## 4. The worst predictions", "",
+              "Average error hides the misses riders remember. \"Bus earlier than predicted\" counts predictions where "
+              "the bus arrived more than 5 minutes before the predicted time, so a rider who trusted it would miss it.", "",
+              row("Dataset", "Prediction", "Median error", "95th percentile", "99th percentile", "Off by > 5 min",
+                  "Off by > 10 min", "Bus > 5 min earlier than predicted"), row(*["---"] * 8)]
+    q = {}
+    for ds in DATASETS:
+        t = best[ds]["test"]
+        for k, (label, col) in enumerate([("TransLoc as-is", "zero"), ("Lookup table", "lookup"),
+                                          (f"Best model ({best[ds]['model']})", "pred")]):
+            e = t.y - t[col]
+            a = e.abs()
+            q[ds, col] = {"p99": np.percentile(a, 99), "gt10": 100 * (a > 600).mean(), "early": 100 * (e < -300).mean()}
+            lines.append(row(f"`{ds}`" if k == 0 else "", label, f"{np.median(a):.0f} s", f"{np.percentile(a, 95):.0f} s",
+                             f"{np.percentile(a, 99):.0f} s", f"{100 * (a > 300).mean():.1f}%",
+                             f"{q[ds, col]['gt10']:.1f}%", f"{q[ds, col]['early']:.1f}%"))
+    better = [ds for ds in DATASETS if q[ds, "pred"]["p99"] < q[ds, "lookup"]["p99"]]
+    worse = [ds for ds in DATASETS if ds not in better]
+    pct1 = lambda v: f"{min(v):.1f}%" if f"{min(v):.1f}" == f"{max(v):.1f}" else f"{min(v):.1f}–{max(v):.1f}%"
+    lines += ["", f"- **On {' and '.join(f'`{ds}`' for ds in better)} the best model also shrinks the tails.** Compared "
+              "with TransLoc, predictions off by more than 10 minutes drop "
+              + " and ".join(f"from {q[ds, 'zero']['gt10']:.1f}% to {q[ds, 'pred']['gt10']:.1f}% on `{ds}`"
+                             for ds in better) + "."
+              + "".join(f" On `{ds}` its worst 1% are worse than the lookup table's: a 99th-percentile error of "
+                        f"{q[ds, 'pred']['p99']:.0f} s against {q[ds, 'lookup']['p99']:.0f} s (TransLoc: "
+                        f"{q[ds, 'zero']['p99']:.0f} s)." for ds in worse),
+              "- **Correcting TransLoc's optimism moves some errors to the costly side.** The bus arrives more than "
+              f"5 minutes earlier than predicted on {pct1([q[ds, 'zero']['early'] for ds in DATASETS])} of TransLoc's "
+              f"predictions, {pct1([q[ds, 'lookup']['early'] for ds in DATASETS])} of the lookup table's and "
+              f"{pct1([q[ds, 'pred']['early'] for ds in DATASETS])} of the best models'. TransLoc's errors mostly make "
+              "riders wait. The corrections' big misses more often make them miss the bus, and the lookup table, "
+              "which adds the average delay even when a bus is running on time, is the worst on this measure."]
+
+    # 5. by route (combined) and pooled vs single-route models on identical test rows
     c = best["combined"]["test"]
     per_route = [f"{r} {mae(g, 'zero')} → {mae(g)} s ({100 * (mae(g, 'zero') - mae(g)) / mae(g, 'zero'):.0f}%)"
                  for r, g in c.groupby("route_name")]
     same = {ds: best[ds]["test"][KEY + ["y", "pred"]].merge(c[KEY + ["pred"]], on=KEY, suffixes=("", "_c"))
             for ds in ["route", "bus"]}
     assert all(len(same[ds]) == len(best[ds]["test"]) for ds in same), "route/bus test rows missing from combined"
-    lines += ["", "## 4. By route, and pooled vs single-route models", "",
+    lines += ["", "## 5. By route, and pooled vs single-route models", "",
               f"- **The gain is uneven by route.** On the `combined` test days, the best model's error by route is "
               f"{', '.join(per_route)}. Red's feed only gives next-stop ETAs, so TransLoc is already close there.",
               "- **Pooling routes helped, even for a single bus.** On identical test rows, the `combined` model beat "
@@ -168,79 +204,6 @@ def main():
               f"{mae(same['route'])} s for the best `route` model, and on bus #3's rows "
               f"{mae(same['bus'], 'pred_c')} s vs {mae(same['bus'])} s for the best `bus` model. "
               "`combined` has five training days instead of one or two. This rests on one test day, so treat it as a first sign."]
-
-    # 5. next steps
-    f, s = load_features("combined")
-    arrival = (f.t_local + pd.to_timedelta(f.eta_s + f[s["target"]], unit="s")).dt.round("10s")
-    n_arr = pd.DataFrame({"v": f.vehicle_id, "s": f.route_stop_id, "a": arrival}).drop_duplicates().shape[0]
-    day = f.groupby(["route_name", "date"])[s["target"]].mean()
-    swing = day.groupby(level=0).agg(lambda v: v.max() - v.min()).idxmax()
-    lo, hi = day[swing].idxmin(), day[swing].idxmax()
-    md = lambda x: f"{pd.Timestamp(x):%b} {pd.Timestamp(x).day}"
-    lines += ["", "## 5. Next steps", "",
-              "### 5.1 Model structure: `route` or `combined`, decided by the data", "",
-              "- **Drop per-bus models.** A live system needs a prediction for every bus, one bus has the least data, "
-              "and on bus #3's own rows the pooled model was better (section 4). Bus identity works better as a feature "
-              "inside a larger model, as the bus embeddings already are.",
-              "- **Choose between `route` and `combined` from the data we collect.** Today `combined` wins on Green "
-              "(section 4), because pooling adds days no single route has. If each route gets many days of its own, "
-              "per-route models may win where routes behave differently (Red's feed, for instance, only gives "
-              "next-stop ETAs). Decide per route: train both on the same days, evaluate day by day (train on everything "
-              "before a day, test on that day, repeat), and keep whichever wins. A middle path is one pooled model with "
-              "a per-route correction on top.", "",
-              "### 5.2 More information to collect", "",
-              row("Source", "What it adds", "Notes"), row(*["---"] * 3),
-              row("More days, all routes on the same days",
-                  f"The biggest lever. The {len(f):,} labeled rows are only about {round(n_arr, -2):,} distinct "
-                  f"arrivals over {f.date.nunique()} days, and {swing}'s average delay was {day[swing, lo]:.0f} s on "
-                  f"{md(lo)} but {day[swing, hi]:.0f} s on {md(hi)}. More test days also give real error bars, which "
-                  "narrow with the square root of the number of days",
-                  "Keep the scrapers running daily on all routes at once, through a semester"),
-              row("GT Parking & Transportation (RideSystems)", "Possibly months of past GPS and arrivals at once",
-                  "The public API has no history, but the dispatch side may"),
-              row("TransLoc fields not saved yet",
-                  "`IsDelayed`, `OnTimeStatus`, `Heading`, `IsOnRoute`, and occupancy from `GetVehicleCapacities` "
-                  "(riders on board out of capacity)",
-                  "Same API the scrapers already call; check that occupancy is filled in during the day. Also fix "
-                  "Clough's stop-ID key and ETAs of 0 s saved as blank"),
-              row("A fixed stop table",
-                  "One row per route stop: ID, name, coordinates, order, distance along the route, planned travel and "
-                  "dwell times, plus hand-added facts such as a traffic light, crosswalk or major building nearby",
-                  "Stops rarely change, so it is built once. The route config in `raw_data/route_config/` already has "
-                  "most columns. Route IDs change when a route is redrawn, so version the table by date"),
-              row("Google traffic (Routes API)",
-                  "Traffic-aware travel time from the bus's current GPS position to the target stop, laid over the route",
-                  "Live only, with no way to backfill history, so start collecting it alongside the scrapers. Paid per "
-                  "request, with terms on storing results; cache it by road segment"),
-              row("A deterministic baseline",
-                  "An ETA computed from known quantities: distance left along the route ÷ recent speed, plus planned "
-                  "dwell at each stop on the way. The model then only has to learn the leftover error",
-                  "Built from the stop table and GPS; no new data needed"),
-              row("Campus calendar", "Class-change times, game days, events, breaks",
-                  "Explains bad days the current features can't see"),
-              row("Live weather", "Current conditions and forecast",
-                  "This study used Open-Meteo's historical archive, which isn't available in real time"),
-              "", "### 5.3 Which model, and what would change it", "",
-              "- **Now:** a gradient-boosted tree model (XGBoost, LightGBM or HistGradientBoosting). Tree ensembles won "
-              "on every dataset, and a gradient-boosted model was best or within 3% of the best (section 6). They train "
-              "in minutes and handle mixed features well. Ship the lookup table first as the simplest win, and keep it "
-              "as the fallback when a feature feed is down. Shelve the NN.",
-              "- **If we get much more data** (months, all routes):",
-              "  - NNs become worth revisiting, including sequence models that read a bus's recent GPS trace.",
-              "  - Per-route models may start to win (5.1).",
-              "  - Predicting a range (\"arrives in 6–9 min\") instead of one number becomes realistic, because there "
-              "would be enough days to check that the ranges hold.",
-              "  - Retrain on a schedule, for example weekly, with day-by-day evaluation.",
-              "- **If it has to run live at low latency** (a prediction for every bus and stop on every poll, every "
-              "15–30 s):",
-              "  - The lookup table is instant, and a gradient-boosted model takes milliseconds per batch; cap its tree "
-              "count and depth. Large ExtraTrees forests and 5-seed NN ensembles cost more.",
-              "  - Features, not models, are the bottleneck. Rolling features (2-minute speed, time since the last "
-              "arrival) need live per-bus state, weather needs a live feed, and Google calls add network delay and "
-              "cost, so cache them and refresh every few minutes.",
-              "  - Plan for missing inputs: fall back to the lookup table, then to TransLoc's ETA.",
-              "- **Open question:** whether accuracy (more data) or a live product (latency) comes first decides "
-              "whether the next effort goes into modeling or engineering."]
 
     # 6. every model
     tuned = df[df.family != "baseline"]

@@ -2,7 +2,7 @@
 
 Test days are held out whole (Mar 4 and Mar 9), and each model is scored on them once. Error is the mean absolute error (MAE) of the predicted arrival time, in seconds. Predicting `delay_s` is the same as correcting TransLoc's ETA, so "TransLoc as-is" is simply a prediction of zero delay.
 
-**Best model** means the tuned model with the lowest test MAE on that dataset: HistGradientBoostingRegressor for `bus`, ExtraTreesRegressor for `route`, XGBRegressor for `combined`. It is picked on the test days, so its score is slightly optimistic. Percentages are computed from the rounded numbers shown.
+**Best model** means the tuned model with the lowest test MAE on that dataset: HistGradientBoostingRegressor for `bus`, ExtraTreesRegressor for `route`, XGBRegressor for `combined`. It is picked on the test days, so its score is slightly optimistic. Percentages are computed from the rounded numbers shown. Next steps are in the [README, section 9](../README.md#9-next-steps).
 
 ## 1. Best model vs TransLoc, and where the gain comes from
 
@@ -66,44 +66,29 @@ TransLoc's error is almost all lateness. On average the bus arrives 1.4 to 1.7 m
 |  | 20+ min | 11% | 26% | 26 − 11 = +15 pts |
 |  | **all** | 41% | 63% | 63 − 41 = +22 pts |
 
-## 4. By route, and pooled vs single-route models
+## 4. The worst predictions
+
+Average error hides the misses riders remember. "Bus earlier than predicted" counts predictions where the bus arrived more than 5 minutes before the predicted time, so a rider who trusted it would miss it.
+
+| Dataset | Prediction | Median error | 95th percentile | 99th percentile | Off by > 5 min | Off by > 10 min | Bus > 5 min earlier than predicted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `bus` | TransLoc as-is | 239 s | 711 s | 854 s | 41.3% | 9.7% | 0.0% |
+|  | Lookup table | 155 s | 472 s | 599 s | 17.8% | 1.0% | 15.4% |
+|  | Best model (HistGradientBoostingRegressor) | 102 s | 323 s | 496 s | 6.8% | 0.2% | 5.5% |
+| `route` | TransLoc as-is | 244 s | 758 s | 923 s | 41.9% | 11.5% | 0.0% |
+|  | Lookup table | 139 s | 437 s | 583 s | 16.0% | 0.7% | 9.6% |
+|  | Best model (ExtraTreesRegressor) | 106 s | 375 s | 505 s | 9.9% | 0.2% | 7.6% |
+| `combined` | TransLoc as-is | 181 s | 787 s | 1102 s | 34.1% | 11.0% | 0.2% |
+|  | Lookup table | 115 s | 531 s | 765 s | 18.7% | 3.2% | 10.0% |
+|  | Best model (XGBRegressor) | 77 s | 522 s | 882 s | 12.9% | 3.3% | 3.8% |
+
+- **On `bus` and `route` the best model also shrinks the tails.** Compared with TransLoc, predictions off by more than 10 minutes drop from 9.7% to 0.2% on `bus` and from 11.5% to 0.2% on `route`. On `combined` its worst 1% are worse than the lookup table's: a 99th-percentile error of 882 s against 765 s (TransLoc: 1102 s).
+- **Correcting TransLoc's optimism moves some errors to the costly side.** The bus arrives more than 5 minutes earlier than predicted on 0.0–0.2% of TransLoc's predictions, 9.6–15.4% of the lookup table's and 3.8–7.6% of the best models'. TransLoc's errors mostly make riders wait. The corrections' big misses more often make them miss the bus, and the lookup table, which adds the average delay even when a bus is running on time, is the worst on this measure.
+
+## 5. By route, and pooled vs single-route models
 
 - **The gain is uneven by route.** On the `combined` test days, the best model's error by route is Gold 298 → 228 s (23%), Green 290 → 126 s (57%), Red 84 → 80 s (5%). Red's feed only gives next-stop ETAs, so TransLoc is already close there.
 - **Pooling routes helped, even for a single bus.** On identical test rows, the `combined` model beat the models trained on one route or one bus: on Green's test day 126 s vs 136 s for the best `route` model, and on bus #3's rows 114 s vs 127 s for the best `bus` model. `combined` has five training days instead of one or two. This rests on one test day, so treat it as a first sign.
-
-## 5. Next steps
-
-### 5.1 Model structure: `route` or `combined`, decided by the data
-
-- **Drop per-bus models.** A live system needs a prediction for every bus, one bus has the least data, and on bus #3's own rows the pooled model was better (section 4). Bus identity works better as a feature inside a larger model, as the bus embeddings already are.
-- **Choose between `route` and `combined` from the data we collect.** Today `combined` wins on Green (section 4), because pooling adds days no single route has. If each route gets many days of its own, per-route models may win where routes behave differently (Red's feed, for instance, only gives next-stop ETAs). Decide per route: train both on the same days, evaluate day by day (train on everything before a day, test on that day, repeat), and keep whichever wins. A middle path is one pooled model with a per-route correction on top.
-
-### 5.2 More information to collect
-
-| Source | What it adds | Notes |
-| --- | --- | --- |
-| More days, all routes on the same days | The biggest lever. The 110,569 labeled rows are only about 4,800 distinct arrivals over 7 days, and Gold's average delay was 18 s on Mar 6 but 356 s on Mar 5. More test days also give real error bars, which narrow with the square root of the number of days | Keep the scrapers running daily on all routes at once, through a semester |
-| GT Parking & Transportation (RideSystems) | Possibly months of past GPS and arrivals at once | The public API has no history, but the dispatch side may |
-| TransLoc fields not saved yet | `IsDelayed`, `OnTimeStatus`, `Heading`, `IsOnRoute`, and occupancy from `GetVehicleCapacities` (riders on board out of capacity) | Same API the scrapers already call; check that occupancy is filled in during the day. Also fix Clough's stop-ID key and ETAs of 0 s saved as blank |
-| A fixed stop table | One row per route stop: ID, name, coordinates, order, distance along the route, planned travel and dwell times, plus hand-added facts such as a traffic light, crosswalk or major building nearby | Stops rarely change, so it is built once. The route config in `raw_data/route_config/` already has most columns. Route IDs change when a route is redrawn, so version the table by date |
-| Google traffic (Routes API) | Traffic-aware travel time from the bus's current GPS position to the target stop, laid over the route | Live only, with no way to backfill history, so start collecting it alongside the scrapers. Paid per request, with terms on storing results; cache it by road segment |
-| A deterministic baseline | An ETA computed from known quantities: distance left along the route ÷ recent speed, plus planned dwell at each stop on the way. The model then only has to learn the leftover error | Built from the stop table and GPS; no new data needed |
-| Campus calendar | Class-change times, game days, events, breaks | Explains bad days the current features can't see |
-| Live weather | Current conditions and forecast | This study used Open-Meteo's historical archive, which isn't available in real time |
-
-### 5.3 Which model, and what would change it
-
-- **Now:** a gradient-boosted tree model (XGBoost, LightGBM or HistGradientBoosting). Tree ensembles won on every dataset, and a gradient-boosted model was best or within 3% of the best (section 6). They train in minutes and handle mixed features well. Ship the lookup table first as the simplest win, and keep it as the fallback when a feature feed is down. Shelve the NN.
-- **If we get much more data** (months, all routes):
-  - NNs become worth revisiting, including sequence models that read a bus's recent GPS trace.
-  - Per-route models may start to win (5.1).
-  - Predicting a range ("arrives in 6–9 min") instead of one number becomes realistic, because there would be enough days to check that the ranges hold.
-  - Retrain on a schedule, for example weekly, with day-by-day evaluation.
-- **If it has to run live at low latency** (a prediction for every bus and stop on every poll, every 15–30 s):
-  - The lookup table is instant, and a gradient-boosted model takes milliseconds per batch; cap its tree count and depth. Large ExtraTrees forests and 5-seed NN ensembles cost more.
-  - Features, not models, are the bottleneck. Rolling features (2-minute speed, time since the last arrival) need live per-bus state, weather needs a live feed, and Google calls add network delay and cost, so cache them and refresh every few minutes.
-  - Plan for missing inputs: fall back to the lookup table, then to TransLoc's ETA.
-- **Open question:** whether accuracy (more data) or a live product (latency) comes first decides whether the next effort goes into modeling or engineering.
 
 ## 6. All models and baselines
 
