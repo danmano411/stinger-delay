@@ -1,113 +1,133 @@
-# Model comparison: predicting how late TransLoc's ETA is
+# Model comparison: correcting TransLoc's Stinger ETAs
 
-Three datasets built from the real March 2026 Stinger scrapes, five tuned models on each (15 in total), scored on **held-out service days** with test **R²** and **MAE**.
+This folder predicts how late each TransLoc ETA will be, using the team's Stinger scrapes from March 2026. It builds three datasets, tunes five models on each (15 in total), and scores them on whole days held out from training. On those days the best model for each dataset cuts TransLoc's arrival-time error by 44–54%. Most of that gain comes from correcting TransLoc's steady optimism, which a simple lookup table on its ETA already does.
 
-## Target
+**Results:** the two key tables are in [section 7](#7-results). All four tables, the per-route breakdown and next steps are in **[results/summary.md](results/summary.md)**.
 
-`delay_s` = actual arrival − TransLoc's ETA, in seconds. Positive means the bus reached the stop **later** than TransLoc said.
+Pipeline: `raw_data/` → `src/build_datasets.py` → `eda/eda_<ds>.ipynb` → `models/<ds>/` → `src/summarize_results.py` → `results/summary.md`
 
-- **Actual arrival:** taken from GPS, as the moment a bus passes within 25 m of the stop's coordinates, interpolated between fixes. Stop coordinates come from `raw_data/route_config/`.
-- **Label check:** these arrival times agree with TransLoc's own "stop passed" events for 90% (Gold) and 96% (Green) of stops.
+## 1. Data
 
-## Datasets (`datasets/`)
+- `raw_data/` holds the scrapes: GPS positions and TransLoc ETAs for Gold, Green, Red and Clough (weekdays, Mar 2–16, 2026). It also holds the route configuration (stop coordinates, order, planned times) and hourly weather from Open-Meteo. [raw_data/README.md](raw_data/README.md) lists every file and scraper quirk.
+- The three modeled routes have labeled data on seven days, three per route. Green was recorded on different days from Gold and Red, which share Mar 4 and 5. The ~110,000 labeled rows cover only about 4,800 distinct bus-stop arrivals, because every poll repeats the ETA for the same upcoming arrival.
+- **Clough is not modeled.** Its scraper never saved which stop an ETA refers to. The best guess that doesn't look into the future ("the stop after the last known arrival") matches TransLoc's own stop only 75.6% of the time on Red, below an 80% bar set in advance.
 
-| Dataset | Rows (model-ready) | Features | Contents | Train days | Test days |
+## 2. Target
+
+`delay_s` = actual arrival − TransLoc's ETA, in seconds. Positive means the bus arrived later than TransLoc said.
+
+The actual arrival is the moment the bus's GPS track passes within 25 m of the stop, interpolated between fixes. An earlier check of this method (not rerun in this pipeline) found these arrivals match TransLoc's own "stop passed" events for 90% (Gold) and 96% (Green) of stops.
+
+## 3. Cleaning
+
+`src/build_datasets.py` drops:
+- duplicates, placeholder rows, overnight rows and positions more than 50 m off the route
+- blank ETAs (on Gold and Green the bus is at the stop; on Red it's off its route), and rows where the bus is already at the target stop
+- **stale ETAs** that still point at the stop the bus just passed: always on Red's next-stop feed, and on the other feeds when the ETA is under 2 min. Their only later arrival is a lap away, which would be a fake ~30 min delay.
+- rows whose arrival is more than 45 min away
+
+The EDA notebooks also drop target outliers beyond 3×IQR, from the training split only.
+
+## 4. Features
+
+All are known at prediction time; the build asserts it.
+- **TransLoc's ETA:** the ETA, its change since the last poll, and how many polls it has been frozen
+- **Trip progress:** stops ahead, TransLoc's planned seconds to the stop, time since the last known stop arrival, distance to the stop
+- **Bus state:** speed, 2-minute mean speed, time stationary, stale-GPS flag, position, buses on the route
+- **Time:** hour, time-of-day sin/cos, weekday one-hot
+- **Stop:** coordinates, position along the route, planned dwell time
+- **Weather:** temperature, apparent temperature, humidity, precipitation (this hour and last), cloud cover, wind, gusts, WMO weather-group one-hot
+- **IDs:** bus and stop as entity embeddings learned on the training split; route as a one-hot in `combined`
+
+Features constant within train are dropped. For each pair with |Spearman| ≥ 0.95, the one less related to the target is dropped, except that TransLoc's ETA is always kept (fit on train).
+
+## 5. Datasets and split
+
+| Dataset | Contents | Rows (model-ready) | Features | Train days | Test days |
 |---|---|---|---|---|---|
-| `bus` | 23,992 | 35 | Green route, bus #3 (the only Green bus seen on two days) | Mar 10 | Mar 9 |
-| `route` | 60,809 | 43 | Green route, all 6 buses | Mar 10, 16 | Mar 9 |
-| `combined` | 110,399 | 50 | Gold + Green + Red | Mar 3, 5, 6, 10, 16 | Mar 4, 9 |
+| `bus` | Green bus #3, the only Green bus seen on two days | 23,992 | 35 | Mar 10 | Mar 9 |
+| `route` | Green, all 6 buses | 60,809 | 43 | Mar 10, 16 | Mar 9 |
+| `combined` | Gold + Green + Red | 110,399 | 50 | Mar 3, 5, 6, 10, 16 | Mar 4, 9 |
 
-Pipeline: `src/build_datasets.py` → `<ds>_features.parquet` → `eda/eda_<ds>.ipynb` → `<ds>_model_ready.parquet` (`build_report.md` has every row count).
+- **Test = whole held-out days.** Labels reach 45 min ahead and delays drift within a day, so any within-day split leaks. Mar 4 and Mar 9 were chosen for coverage (every route gets a training and a test day) before any model was scored.
+- **Tuning validates the same way**, on whole held-out training days. The lazy models use grouped CV by date (3 folds for `combined`, 2 for `route`), and XGBoost and the NN hold out one training day (Mar 5 for `combined`, Mar 16 for `route`). `bus` has one training day, so it validates on 3-hour blocks.
+- `eda/eda_<ds>.ipynb` checks outliers, correlations and constants, and writes `datasets/<ds>_model_ready.parquet`. Row counts at every stage are in [datasets/build_report.md](datasets/build_report.md).
 
-**Why Clough isn't modeled.** Its scraper never saved which stop an ETA refers to. The only reliable way to recover the stop is to look at where the bus went *next* (92.7% agreement on Red), and that uses the future. The best causal guess, "the stop after the last known arrival", matches TransLoc's own stop only 75.6% of the time on Red, below the 80% bar set in advance. Clough stays in `raw_data/`.
+## 6. Models
 
-**Cleaning:**
-- Drop exact duplicates.
-- Drop blank ETAs: on Gold/Green a blank means the bus is at the stop; on Red it means the bus is off its route.
-- Drop placeholder rows (no stop and no ETA).
-- Drop positions more than 50 m off the route, and overnight rows.
-- Drop rows where the bus is already at the target stop.
-- Drop **stale ETAs**, where TransLoc still points at the stop the bus just passed: always on Red's next-stop feed, and when the ETA is under 2 min on the all-stop feeds. That ETA refers to the visit that just happened, so the only later arrival is a lap away (a fake ~30 min delay).
-- Drop rows whose next arrival is more than 45 min away.
-- In EDA: drop target outliers beyond 3×IQR **from the train split only**. Test rows are never filtered by their label.
+| File | Family | What it does |
+|---|---|---|
+| `models/<ds>/lazy_<ds>.ipynb` | lazy | LazyRegressor screens ~24 regressors. Optuna tunes the top 3 (grouped CV, MAE objective, up to 40 trials or 15 min each), then each is refit on all of train |
+| `models/<ds>/xgboost_<ds>.ipynb` | xgboost | XGBoost tuned with Optuna (60 trials). Early stopping on a held-out part of train picks the number of trees, then it is refit on all of train |
+| `models/<ds>/nn_<ds>.py` | nn | PyTorch MLP (LayerNorm, SiLU, dropout, AdamW, OneCycle or ReduceLROnPlateau, early stopping), tuned with Optuna and pruning. The final prediction averages 5 seeds, and inputs are clipped to the training range |
 
-**Features** (all known at prediction time; the build asserts it):
-- **TransLoc ETA:** `eta_s`, its change since the last poll, and how many polls it has been frozen.
-- **Trip progress:** stops ahead, TransLoc's planned seconds to the stop, time since the last *known* stop arrival, and distance to the stop. An arrival counts as known only from the GPS fix that reveals it. An out-of-order stop visit that the route-order filter confirms using the next visit counts only from that confirmation.
-- **Bus state:** speed, 2-minute mean speed, seconds stationary, stale-GPS flag, position, number of buses on the route.
-- **Time:** hour, time-of-day sin/cos, weekday one-hot.
-- **Stop:** latitude/longitude, position along the route, planned dwell time.
-- **Weather** (Open-Meteo hourly archive, fetched in UTC and converted with real DST rules): temperature, apparent temperature, humidity, precipitation (current and previous hour), cloud cover, wind, gusts, plus a one-hot of the WMO weather group.
-- **IDs:** bus and stop IDs become **entity embeddings**, learned by a small PyTorch network on the train split only. Route is one-hot in `combined`.
-- **Pruning:** features constant within train are dropped, and for each pair with |Spearman| ≥ 0.95 the one less related to the target is dropped (fit on train).
+Lazy's top 3 leave out XGBoost, which has its own notebook, so each dataset gets five different models. Every final model saves its test predictions to `results/preds/`, so every metric can be recomputed.
 
-**Split:**
-- Whole service days are held out. Labels reach up to 45 min ahead and delays drift within a day, so any within-day split lets training rows share arrival events and context with test rows.
-- The test days are Mar 4 (the first day Gold, Red and Clough were all recorded) and Mar 9 (the first Green day). They were chosen for coverage, before any model was scored on them.
-- Every route has both train and test days. Test share is 26–32%.
-- Tuning validates the way the test works: on whole held-out days inside train. `combined` uses `GroupKFold(3)` by date and `route` uses `GroupKFold(2)` over its two training days. `bus` has a single training day, so it can only use 3-hour blocks, which reward day-specific quirks (a known weakness).
+**The NN trains on less data than the others.** Its early stopping holds out part of train (a whole day for `route` and `combined`, one 3-hour block of Mar 10 for `bus`), and the final networks never train on it. That leaves 86% of the training rows for `bus`, 57% for `route` (Mar 10 only) and 62% for `combined`. `combined` holds out Mar 5, which has about 28,000 of Gold's 29,000 training rows. Its NN therefore learned Gold from the 1,002 rows of Mar 6, an unusually calm day.
 
-## Models (`models/<ds>/`)
+**Why the NNs stop after 11–32 epochs.** Early stopping ends training once validation error hasn't improved for 10 epochs. [src/nn_epoch_diagnostic.py](src/nn_epoch_diagnostic.py) retrains each tuned NN for 60 epochs without early stopping, on the training split only. It shows they don't stop learning:
+- training error keeps falling (`route`: 199 s → 54 s)
+- for `route` and `combined`, error on the held-out validation day is lowest at epoch 1–22 (1–9 with the warm-up flaw below fixed), then rises
+- validated instead on held-out hours of their own training days (warm-up fixed), the same settings keep improving for 9–57 epochs, down to 98–111 s
 
-| File | What it does |
-|---|---|
-| `lazy_<ds>.ipynb` | LazyRegressor screens ~24 regressors on a group-held-out slice of train, then Optuna tunes the top 3 (grouped 3-fold CV, MAE objective, up to 40 trials or 15 min each) and refits each on the full train set |
-| `xgboost_<ds>.ipynb` | XGBRegressor tuned with Optuna (60 trials). Early stopping on an inner validation split; the refit uses the best iteration count |
-| `nn_<ds>.py` | PyTorch MLP (LayerNorm, SiLU, dropout) with AdamW, a tuned scheduler (OneCycle or ReduceLROnPlateau), early stopping with best-weight restore, gradient clipping, and Optuna tuning with median pruning. The final model averages the best configuration trained from 5 seeds; each member trains on the 80% of train rows not used for early stopping. Inputs are clipped to the training range |
+So what an NN learns from one day mostly doesn't carry to the next; the limit is the number of days, not epochs. `bus` is the exception: even on a held-out block of its own day, its validation error is lowest at epoch 3–9 and then rises, so with one day of data it overfits quickly.
 
-All files share `src/mc_common.py` for loading, splits, metrics and saving. Each final model writes `results/<ds>__<family>__<model>.json` plus its test predictions in `results/preds/`, so every metric can be recomputed. The metric code checks that y_true in each prediction file matches the dataset exactly.
+**A flaw the diagnostic found.** The final fit for `route` and `combined` sized its OneCycle warm-up for 300 epochs (tuning used 150), so the learning rate was only 7.5–31% of its tuned peak when training stopped (`bus` uses a different schedule). With the warm-up sized correctly, validation-day error is still lowest within the first 9 epochs, so the reported NN results were left as they are.
 
-## Results
+## 7. Results
 
-Test = held-out service days, each model scored once. MAE is in seconds of error in predicting `delay_s`. Full table with RMSE and tuning scores: `results/summary.md` / `summary.csv`.
+The two key tables from [results/summary.md](results/summary.md). Test = the held-out days, each model scored once. Error is the mean absolute error of the predicted arrival time, in seconds. **Best model** = the tuned model with the lowest test MAE on that dataset. The lookup table is the simplest fix: it adds the average training delay for TransLoc's ETA range (10 ranges).
 
-| Dataset | Model (family) | Test R² | Test MAE (s) |
-|---|---|---|---|
-| bus | HistGradientBoostingRegressor (lazy) | **0.504** | **127.4** |
-| bus | ExtraTreesRegressor (lazy) | 0.386 | 138.7 |
-| bus | XGBRegressor (xgboost) | 0.380 | 143.1 |
-| bus | LinearSVR (lazy) | 0.332 | 141.6 |
-| bus | MLP (nn) | −0.584 | 226.5 |
-| route | LGBMRegressor (lazy) | **0.505** | 139.9 |
-| route | ExtraTreesRegressor (lazy) | 0.457 | **135.6** |
-| route | XGBRegressor (xgboost) | 0.449 | 139.2 |
-| route | MLP (nn) | 0.365 | 158.0 |
-| route | AdaBoostRegressor (lazy) | 0.360 | 157.7 |
-| combined | XGBRegressor (xgboost) | **0.302** | **142.5** |
-| combined | GradientBoostingRegressor (lazy) | 0.244 | 156.6 |
-| combined | MLP (nn) | 0.181 | 176.1 |
-| combined | ElasticNet (lazy) | 0.136 | 200.7 |
-| combined | OrthogonalMatchingPursuit (lazy) | 0.089 | 191.3 |
+|  | `bus` | `route` | `combined` |
+| --- | --- | --- | --- |
+| Best model | HistGradientBoostingRegressor | ExtraTreesRegressor | XGBRegressor |
+| **T** TransLoc as-is | 279 s | 290 s | 256 s |
+| **L** Lookup table on TransLoc's ETA | 183 s | 173 s | 178 s |
+| **M** Best model | 127 s | 136 s | 143 s |
+| **Error reduction** (T − M) / T | **(279 − 127) / 279 = 54%** | **(290 − 136) / 290 = 53%** | **(256 − 143) / 256 = 44%** |
+| … from the lookup table (T − L) / T | (279 − 183) / 279 = 34% | (290 − 173) / 290 = 40% | (256 − 178) / 256 = 30% |
+| … added by the model (L − M) / T | (183 − 127) / 279 = 20% | (173 − 136) / 290 = 13% | (178 − 143) / 256 = 14% |
 
-Baselines on the same test days, next to the best tuned model (lowest test MAE). The straight-line fix and the lookup table use only TransLoc's ETA and are fit on train, like the models:
+Error by how far away TransLoc says the bus is:
 
-| Average error (MAE) | bus | route | combined |
-|---|---|---|---|
-| TransLoc as-is (the current system) | 279 s | 290 s | 256 s |
-| Add the average training delay to every ETA | 218 s | 212 s | 240 s |
-| Straight-line fix: delay = a + b × ETA | 188 s | 176 s | 194 s |
-| Lookup table: average training delay per tenth of the ETA range | 183 s | 173 s | 178 s |
-| **Best tuned model** | **127 s** HistGradientBoostingRegressor | **136 s** ExtraTreesRegressor | **143 s** XGBRegressor |
+| Dataset (best model) | TransLoc's ETA | Rows | TransLoc error | Model error | Reduction (TransLoc − model) / TransLoc |
+| --- | --- | --- | --- | --- | --- |
+| `bus` (HistGradientBoostingRegressor) | under 2 min | 1,377 | 99 s | 83 s | (99 − 83) / 99 = 16% |
+|  | 2–5 min | 1,722 | 208 s | 103 s | (208 − 103) / 208 = 50% |
+|  | 5–10 min | 2,350 | 308 s | 134 s | (308 − 134) / 308 = 56% |
+|  | 10–20 min | 2,087 | 423 s | 169 s | (423 − 169) / 423 = 60% |
+|  | **all** | 7,536 | 279 s | 127 s | (279 − 127) / 279 = 54% |
+| `route` (ExtraTreesRegressor) | under 2 min | 3,085 | 103 s | 66 s | (103 − 66) / 103 = 36% |
+|  | 2–5 min | 3,927 | 203 s | 106 s | (203 − 106) / 203 = 48% |
+|  | 5–10 min | 5,597 | 340 s | 144 s | (340 − 144) / 340 = 58% |
+|  | 10–20 min | 4,389 | 438 s | 201 s | (438 − 201) / 438 = 54% |
+|  | **all** | 16,998 | 290 s | 136 s | (290 − 136) / 290 = 53% |
+| `combined` (XGBRegressor) | under 2 min | 8,646 | 88 s | 74 s | (88 − 74) / 88 = 16% |
+|  | 2–5 min | 5,184 | 178 s | 92 s | (178 − 92) / 178 = 48% |
+|  | 5–10 min | 6,901 | 316 s | 154 s | (316 − 154) / 316 = 51% |
+|  | 10–20 min | 6,868 | 418 s | 214 s | (418 − 214) / 418 = 49% |
+|  | 20+ min | 1,542 | 463 s | 328 s | (463 − 328) / 463 = 29% |
+|  | **all** | 29,141 | 256 s | 143 s | (256 − 143) / 256 = 44% |
 
-Error by how far away TransLoc says the bus is (ranges across the three datasets):
+## 8. Caveats
 
-| TransLoc's ETA | TransLoc's error | Best model's error | Bus arrives later than TransLoc said, on average |
-|---|---|---|---|
-| under 2 min | 88–103 s | 66–83 s | +1.4 to +1.7 min |
-| 2–5 min | 178–208 s | 92–106 s | +2.8 to +3.4 min |
-| 5–10 min | 308–340 s | 134–154 s | +4.7 to +5.3 min |
-| 10–20 min | 418–438 s | 169–214 s | +6.7 to +7.3 min |
-| 20+ min (combined only) | 463 s | 328 s | +6.5 min |
+- **Little data.** Each dataset is tested on one or two days, so scores vary a lot, and the best model is picked on those same days.
+- **The test days differ from the training days.** Mar 4 is a Wednesday and no training day is. Mar 9 is dry until its last service hour, and some of its humidity readings are below anything in training. Two of the three Green buses on Mar 9 never appear in training, so they get the average bus embedding.
+- **Planned stop-to-stop times come from the September 2026 route config.** The stop IDs match March, but the timings may have changed.
+- **Tuning scores are not a preview of test scores.** The held-out training days were harder than the test days, so 13 of 15 models scored worse in tuning than on test (`tuning_mae_s` in `summary.csv`). The entity embeddings are learned without the day XGBoost and the NN validate on, but the lazy models' cross-validation folds include days the embeddings were trained on, which flatters those folds slightly. The test split is unaffected.
+- **The heaviest delays are capped.** Rows whose arrival is more than 45 min away are dropped from both splits. They are mostly missed detections a lap later, but the cap also removes the largest genuine delays.
+- **`route`'s XGBoost has only 9 trees.** Its validation day, Mar 16, was rainy all day (0.5 in), while Mar 10 in training had only light afternoon rain (0.05 in), so early stopping ended it early.
 
-What this says:
-- **Tuned models clearly beat trusting TransLoc's ETA as-is.** On a day they have never seen, the best model cuts TransLoc's error by **54% (bus), 53% (route) and 44% (combined)**, and it is better at every distance from the stop. It lands within 2 min of the actual arrival 55–63% of the time, versus 29–41% for TransLoc.
-- **Most of that gain is a simple bias fix.** TransLoc is consistently optimistic, and more so the further out it predicts. A lookup table on TransLoc's ETA alone gets 63–76% of the improvement; the models cut the remaining error by another 20–31%. A few tuned models do worse than the lookup table: `combined` ElasticNet and OrthogonalMatchingPursuit, and the `bus` NN.
-- **Validation has to look like the test.** When `route` was tuned on held-out hours of its training days, the screen promoted linear models that collapsed on the new day (R² −11 to −18), and the NN scored −1.18. Tuned on a held-out *day*, every route model beats the baselines, including the NN (R² 0.365).
-- **One training day is too little for a neural network.** `bus` trains on Mar 10 only, and its NN, although correlated with the truth (r = 0.74), predicts about 208 s too high on the calmer test day (mean delay 269 s vs 379 s). With two or more training days the NN's bias shrinks (+77 s route, +52 s combined).
-- **Linear models rank poorly on combined** (ElasticNet, OrthogonalMatchingPursuit). The lazy screen validates on one held-out training day, which is a noisy signal, so weak models can reach the top 3.
-- **Test sets are one or two days, so gaps of a few hundredths of R² are noise.** Collecting more days (ideally a semester, with all routes recorded at once) would help more than further tuning.
+## 9. How the method changed
 
-## Reproduce
+Independent verification passes changed the method several times. Numbers from earlier versions are quoted only to explain each change. In order:
+1. **NN seed averaging.** A single retrain of a tuned NN varied by 10–25 s of validation MAE, so the final fit averages 5 seeds.
+2. **Hour-based split → whole days.** The first version held out service hours, and training rows from the hour before a test hour predicted the same arrivals. Removing them cut one model's R² from 0.53 to 0.37. The same pass fixed an ordering issue in the arrival filter, a one-hour weather offset before Mar 8, and test rows filtered by their own label.
+3. **NN inputs clipped to the training range,** because test-day features fell outside it. In that run, NN test R² went from −0.777 / −1.214 / 0.208 (`bus` / `route` / `combined`) to −0.583 / −1.178 / 0.216. This change was made after seeing those test scores.
+4. **Stale ETAs dropped.** They were labeled with the next lap's arrival (about +2,000 s). On `combined`, 0.4% of test rows made up 17% of the squared error.
+5. **`route` tuning moved from 3-hour blocks to whole days.** Validated within the day, its screen picked Ridge, BayesianRidge and LinearRegression, which scored R² −11 to −18 on the test day. This change was also made after seeing test scores. It was the last change: nothing was changed after it to chase test scores.
+
+## 10. Reproduce
 
 ```bash
 python -m venv .venv && .venv/Scripts/activate            # Python 3.12
@@ -116,32 +136,7 @@ python -m ipykernel install --user --name stinger-mc
 cd src && python build_datasets.py                           # ~30 s
 cd ../eda && jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.kernel_name=stinger-mc eda_bus.ipynb eda_route.ipynb eda_combined.ipynb
 cd ../src && python run_all.py --threads 2                   # 9 jobs in parallel, ~1 h on 16 threads
-python summarize_results.py                                  # results/summary.md
+python summarize_results.py                                  # results/summary.md and summary.csv
+python nn_epoch_diagnostic.py route 4                        # optional: the NN epoch diagnostic (also bus, combined)
 ```
 Set `MC_SMOKE=1` for a fast end-to-end check with tiny budgets.
-
-## Caveats
-
-- **Little data:** about two weeks of March weekdays. Each route was recorded on different days, and the test covers only one or two days per dataset, so scores vary a lot. The `bus` model trains on a single day.
-- **Plan times are from later:** planned stop-to-stop times come from the September 2026 route config. The stop IDs match the March data, but the timings may have changed since.
-- **Whole-day validation makes early stopping conservative:** on `route`, XGBoost's validation day is rainy Mar 16 against dry Mar 10 for training, so it stopped after 9 trees. That is the honest outcome of validating on a different day; more trees were not tried on the test day.
-- **Validation scores are optimistic:** the entity embeddings are fit on all train rows, so tuning/validation scores run higher than test scores. The test split is unaffected.
-- **The test days differ from the training days:**
-  - Mar 4 is a Wednesday, and no training day is.
-  - The Mar 9 test day has no rain, and some of its humidity readings are below anything seen in training.
-  - Two of the three Green buses on Mar 9 never appear in training, so they get the average bus embedding.
-  - This is what "a new day" looks like with two weeks of data.
-- **Heaviest delays are capped out:** rows whose matched arrival is more than 45 min away are removed from both splits, because they are mostly missed-detection matches a lap later. This also removes the largest genuine delays, so absolute errors on extreme days would be higher.
-- **Scraper quirks:** see `raw_data/README.md` (ETAs of 0 s saved as blank, Clough stop IDs lost, the GPS-only Gold scraper).
-
-## History (why the method changed)
-
-The first version split rows by service *hour*. An independent verification pass then showed that hour blocks leak: training rows from the hour before a test hour predict the same arrivals. Removing just those rows cut one model's R² from 0.53 to 0.37. The same pass found a small ordering issue in the arrival filter, a one-hour weather offset for dates before Mar 8, and test rows filtered by their label. All of these were fixed, the datasets were rebuilt, and every model was retrained and re-verified. Numbers from the first version are not reported.
-
-A second verification pass then led to two more changes:
-1. **Stale ETAs dropped.** Rows where TransLoc still points at the stop the bus just passed were being labeled with the *next lap's* arrival, a fake delay of about +2,000 s. On `combined`, 0.4% of test rows made up 17% of the test error's sum of squares. The rule uses only information available at prediction time, so it applies to both splits.
-2. **`route` tuning moved from 3-hour blocks to whole days.** Its lazy screen, validated on held-out hours of the same days, promoted Ridge, BayesianRidge and LinearRegression, which scored R² −11 to −18 on the test day. In training "Monday" is also the rainy, snowy day, so a linear model can pile large opposing weights on those features, and they blow up on a dry Monday. Those results were discarded, and validation now holds out a whole day, like the test. Because this change came after seeing those test scores, it is disclosed here.
-
-The NN recipe changed twice. Both changes are disclosed here:
-1. **Seed averaging (first version):** a single retrain of the tuned NN landed 10–25 s of validation MAE away from its tuning trial, so the final fit now averages 5 seeds.
-2. **Input clipping (this version):** the first run on held-out days scored R² −0.777 / −1.214 / 0.208 (bus / route / combined). A label-free check showed that test-day features fall outside the training range (for example, 69% of bus test rows have humidity never seen in training). NN inputs are now clipped to the training range, a standard guard against linear extrapolation; tree models are unaffected by construction. With clipping: −0.583 / −1.178 / 0.216. No further changes were made after that, to avoid tuning to the test days.
