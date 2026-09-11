@@ -79,16 +79,29 @@ Test = held-out service days, each model scored once. MAE is in seconds of error
 | combined | ElasticNet (lazy) | 0.136 | 200.7 |
 | combined | OrthogonalMatchingPursuit (lazy) | 0.089 | 191.3 |
 
-Baselines on the same test days:
+Baselines on the same test days, next to the best tuned model (lowest test MAE). The straight-line fix and the lookup table use only TransLoc's ETA and are fit on train, like the models:
 
-| Dataset | Trust TransLoc (predict delay 0) | Predict the train mean |
-|---|---|---|
-| bus | R² −1.34, MAE 279 s | R² −0.23, MAE 218 s |
-| route | R² −1.34, MAE 290 s | R² −0.09, MAE 212 s |
-| combined | R² −0.72, MAE 256 s | R² −0.08, MAE 240 s |
+| Average error (MAE) | bus | route | combined |
+|---|---|---|---|
+| TransLoc as-is (the current system) | 279 s | 290 s | 256 s |
+| Add the average training delay to every ETA | 218 s | 212 s | 240 s |
+| Straight-line fix: delay = a + b × ETA | 188 s | 176 s | 194 s |
+| Lookup table: average training delay per tenth of the ETA range | 183 s | 173 s | 178 s |
+| **Best tuned model** | **127 s** HistGradientBoostingRegressor | **136 s** ExtraTreesRegressor | **143 s** XGBRegressor |
+
+Error by how far away TransLoc says the bus is (ranges across the three datasets):
+
+| TransLoc's ETA | TransLoc's error | Best model's error | Bus arrives later than TransLoc said, on average |
+|---|---|---|---|
+| under 2 min | 88–103 s | 66–83 s | +1.4 to +1.7 min |
+| 2–5 min | 178–208 s | 92–106 s | +2.8 to +3.4 min |
+| 5–10 min | 308–340 s | 134–154 s | +4.7 to +5.3 min |
+| 10–20 min | 418–438 s | 169–214 s | +6.7 to +7.3 min |
+| 20+ min (combined only) | 463 s | 328 s | +6.5 min |
 
 What this says:
-- **Tuned models clearly beat trusting TransLoc's ETA as-is.** On a day they have never seen, the best model cuts TransLoc's error by **54% (bus), 53% (route) and 44% (combined)**.
+- **Tuned models clearly beat trusting TransLoc's ETA as-is.** On a day they have never seen, the best model cuts TransLoc's error by **54% (bus), 53% (route) and 44% (combined)**, and it is better at every distance from the stop. It lands within 2 min of the actual arrival 55–63% of the time, versus 29–41% for TransLoc.
+- **Most of that gain is a simple bias fix.** TransLoc is consistently optimistic, and more so the further out it predicts. A lookup table on TransLoc's ETA alone gets 63–76% of the improvement; the models cut the remaining error by another 20–31%. A few tuned models do worse than the lookup table: `combined` ElasticNet and OrthogonalMatchingPursuit, and the `bus` NN.
 - **Validation has to look like the test.** When `route` was tuned on held-out hours of its training days, the screen promoted linear models that collapsed on the new day (R² −11 to −18), and the NN scored −1.18. Tuned on a held-out *day*, every route model beats the baselines, including the NN (R² 0.365).
 - **One training day is too little for a neural network.** `bus` trains on Mar 10 only, and its NN, although correlated with the truth (r = 0.74), predicts about 208 s too high on the calmer test day (mean delay 269 s vs 379 s). With two or more training days the NN's bias shrinks (+77 s route, +52 s combined).
 - **Linear models rank poorly on combined** (ElasticNet, OrthogonalMatchingPursuit). The lazy screen validates on one held-out training day, which is a noisy signal, so weak models can reach the top 3.
