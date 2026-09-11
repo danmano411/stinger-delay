@@ -119,6 +119,35 @@ Error by how far away TransLoc says the bus is:
 >
 > **Predicted arrival = TransLoc's ETA + L (the typical delay in this situation) + ML adjustment (today's unusual conditions)**
 
+```mermaid
+flowchart LR
+    subgraph inputs["Inputs"]
+        T["TransLoc data<br/>ETA, bus GPS"]
+        W["Weather"]
+        X["… to be decided<br/>(options in 10.2)"]
+    end
+    subgraph core["Stinger Delay"]
+        L["Lookup table L<br/>typical delay<br/>for this situation"]
+        M["ML model<br/>unusual conditions"]
+    end
+    subgraph outputs["Output"]
+        E["Stinger Delay<br/>refined ETA"]
+        U["Likely range<br/>e.g. 6–9 min"]
+    end
+    T -->|ETA| L
+    T --> M
+    W --> M
+    X --> M
+    L -->|"ETA + typical delay"| E
+    M -->|"± capped adjustment"| E
+    L -.-> U
+    M -.-> U
+    classDef planned stroke-dasharray: 5 5
+    class X,U planned
+```
+
+Dashed boxes are not built yet. The likely range (section 10.4) would come from percentiles stored in the lookup table and quantile versions of the model. It tells riders how far to trust the ETA, which matters most for the worst 5% of predictions.
+
 Why:
 - **L already does most of the work.** On its own it cuts TransLoc's error by 30–40%, and the best models add another 13–20 points (section 7).
 - **It can be explained and checked.** Every number in L is an average of past arrivals ("on Green, buses 6–8 min out ran 7.9 min late"), so anyone can check it against the data, and riders can check it against the bus they see on the map.
