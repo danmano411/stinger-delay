@@ -76,7 +76,9 @@ So what an NN learns from one day mostly doesn't carry to the next; the limit is
 
 ## 7. Results
 
-The two key tables from [results/summary.md](results/summary.md). Test = the held-out days, each model scored once. Error is the mean absolute error of the predicted arrival time, in seconds. **Best model** = the tuned model with the lowest test MAE on that dataset. The lookup table is the simplest fix: it adds the average training delay for TransLoc's ETA range (10 ranges).
+The two key tables from [results/summary.md](results/summary.md). Test = the held-out days, each model scored once. Error is the mean absolute error of the predicted arrival time, in seconds. **Best model** = the tuned model with the lowest test MAE on that dataset.
+
+**L, the lookup table,** is a correction built for this study, not something TransLoc provides. It looks only at TransLoc's ETA. The training rows are sorted by ETA and cut into 10 ranges with the same number of rows each, and each range stores the average delay seen in training. To predict, find the range the ETA falls in and add that range's average delay. For example, on `route` one range is 6.1–8.1 min with an average delay of +7.9 min, so when TransLoc says 7 min, L predicts 14.9 min. The best model (**M**) adds the rest of the gain using the other features.
 
 |  | `bus` | `route` | `combined` |
 | --- | --- | --- | --- |
@@ -108,6 +110,8 @@ Error by how far away TransLoc says the bus is:
 |  | 10–20 min | 6,868 | 418 s | 214 s | (418 − 214) / 418 = 49% |
 |  | 20+ min | 1,542 | 463 s | 328 s | (463 − 328) / 463 = 29% |
 |  | **all** | 29,141 | 256 s | 143 s | (256 − 143) / 256 = 44% |
+
+**The models help most from 2 to 20 minutes out**, which is likely when riders decide whether to head to the stop (an assumption; there is no rider data here). In that range the error falls by 48–60% and the share of predictions within 2 minutes of the actual arrival rises by 23–34 points ([summary.md, section 3](results/summary.md#3-how-often-the-prediction-is-within-2-minutes-of-the-actual-arrival)). Under 2 minutes TransLoc is already fairly close (16–36% cut), and beyond 20 minutes (`combined` only) the cut is 29%.
 
 ## 8. Caveats
 
