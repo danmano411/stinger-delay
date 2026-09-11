@@ -2,7 +2,7 @@
 
 Test days are held out whole (Mar 4 and Mar 9), and each model is scored on them once. Error is the mean absolute error (MAE) of the predicted arrival time, in seconds. Predicting `delay_s` is the same as correcting TransLoc's ETA, so "TransLoc as-is" is simply a prediction of zero delay.
 
-**Best model** means the tuned model with the lowest test MAE on that dataset: HistGradientBoostingRegressor for `bus`, ExtraTreesRegressor for `route`, XGBRegressor for `combined`. It is picked on the test days, so its score is slightly optimistic. Percentages are computed from the rounded numbers shown. Next steps are in the [README, section 9](../README.md#9-next-steps).
+**Best model** means the tuned model with the lowest test MAE on that dataset: HistGradientBoostingRegressor for `bus`, ExtraTreesRegressor for `route`, XGBRegressor for `combined`. It is picked on the test days, so its score is slightly optimistic. Percentages are computed from the rounded numbers shown. Next steps are in the [README, section 10](../README.md#10-next-steps).
 
 ## 1. Best model vs TransLoc, and where the gain comes from
 

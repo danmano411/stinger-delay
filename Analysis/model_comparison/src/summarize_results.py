@@ -104,7 +104,7 @@ def main():
         + ", ".join(f"{best[ds]['model']} for `{ds}`" for ds in DATASETS)
         + ". It is picked on the test days, so its score is slightly optimistic. "
         "Percentages are computed from the rounded numbers shown. Next steps are in the "
-        "[README, section 9](../README.md#9-next-steps).", "",
+        "[README, section 10](../README.md#10-next-steps).", "",
         "## 1. Best model vs TransLoc, and where the gain comes from", "",
         "**L, the lookup table,** is a correction built for this study, not something TransLoc provides. It looks "
         "only at TransLoc's ETA. The training rows are sorted by ETA and cut into 10 ranges with the same number of "
