@@ -1,0 +1,98 @@
+{
+  "id": "combined__lazy__GradientBoostingRegressor",
+  "dataset": "combined",
+  "family": "lazy",
+  "model": "GradientBoostingRegressor",
+  "r2": 0.2442118026314256,
+  "mae": 156.5733523638168,
+  "rmse": 242.23283460101516,
+  "n_test": 29141,
+  "params": {
+    "n_estimators": 650,
+    "learning_rate": 0.019721610970574007,
+    "max_depth": 5,
+    "subsample": 0.7962072844310213,
+    "min_samples_leaf": 3
+  },
+  "cv_mae": 211.03988807858073,
+  "smoke": false,
+  "threads": 2,
+  "extra": {
+    "screen_rank": 3,
+    "screen_val_r2": -0.09035545200194472,
+    "leaderboard_top10": [
+      {
+        "Model": "OrthogonalMatchingPursuit",
+        "Adjusted R-Squared": -0.02067347311966894,
+        "R-Squared": -0.012166443005319216,
+        "RMSE": 339.42186184800863,
+        "Time Taken": 0.0735776424407959
+      },
+      {
+        "Model": "ElasticNet",
+        "Adjusted R-Squared": -0.07812634279397113,
+        "R-Squared": -0.06914045895671506,
+        "RMSE": 348.8439748325288,
+        "Time Taken": 0.13683366775512695
+      },
+      {
+        "Model": "GradientBoostingRegressor",
+        "Adjusted R-Squared": -0.09951964305928174,
+        "R-Squared": -0.09035545200194472,
+        "RMSE": 352.28803544770864,
+        "Time Taken": 7.033390998840332
+      },
+      {
+        "Model": "MLPRegressor",
+        "Adjusted R-Squared": -0.09952130866511744,
+        "R-Squared": -0.09035710372541828,
+        "RMSE": 352.2883022791333,
+        "Time Taken": 13.37460446357727
+      },
+      {
+        "Model": "LassoLars",
+        "Adjusted R-Squared": -0.1183016845578373,
+        "R-Squared": -0.10898095039749522,
+        "RMSE": 355.2841941331333,
+        "Time Taken": 0.08309388160705566
+      },
+      {
+        "Model": "HistGradientBoostingRegressor",
+        "Adjusted R-Squared": -0.14447618891791536,
+        "R-Squared": -0.1349372975283678,
+        "RMSE": 359.4179627978945,
+        "Time Taken": 3.033217191696167
+      },
+      {
+        "Model": "ExtraTreesRegressor",
+        "Adjusted R-Squared": -0.15163845437342172,
+        "R-Squared": -0.14203986748916253,
+        "RMSE": 360.5408485131323,
+        "Time Taken": 20.487136602401733
+      },
+      {
+        "Model": "LGBMRegressor",
+        "Adjusted R-Squared": -0.1709448822883748,
+        "R-Squared": -0.16118538168587127,
+        "RMSE": 363.5503975618966,
+        "Time Taken": 11.300191164016724
+      },
+      {
+        "Model": "RandomForestRegressor",
+        "Adjusted R-Squared": -0.1935271514586807,
+        "R-Squared": -0.183579433910267,
+        "RMSE": 367.03928405542297,
+        "Time Taken": 23.825928926467896
+      },
+      {
+        "Model": "AdaBoostRegressor",
+        "Adjusted R-Squared": -0.31898789371495484,
+        "R-Squared": -0.3079944957009946,
+        "RMSE": 385.84848751395475,
+        "Time Taken": 3.664332628250122
+      }
+    ],
+    "fit_seconds": 207.23293471336365,
+    "n_trials_complete": 10
+  }
+}

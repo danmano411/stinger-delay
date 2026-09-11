@@ -1,0 +1,77 @@
+{
+  "id": "bus__lazy__ExtraTreesRegressor",
+  "dataset": "bus",
+  "family": "lazy",
+  "model": "ExtraTreesRegressor",
+  "r2": 0.3864603846813166,
+  "mae": 138.69054440090258,
+  "rmse": 181.87695345278433,
+  "n_test": 7536,
+  "params": {
+    "n_estimators": 202,
+    "max_depth": 22,
+    "min_samples_leaf": 3,
+    "max_features": "sqrt"
+  },
+  "cv_mae": 168.4989307616164,
+  "smoke": false,
+  "threads": 2,
+  "extra": {
+    "screen_rank": 2,
+    "screen_val_r2": 0.6222620636738387,
+    "leaderboard_top10": [
+      {
+        "Model": "LinearSVR",
+        "R-Squared": 0.6807963445864788,
+        "RMSE": 144.4216774864782
+      },
+      {
+        "Model": "ExtraTreesRegressor",
+        "R-Squared": 0.6222620636738387,
+        "RMSE": 157.10635716352914
+      },
+      {
+        "Model": "HistGradientBoostingRegressor",
+        "R-Squared": 0.5815052562503162,
+        "RMSE": 165.3649488554598
+      },
+      {
+        "Model": "AdaBoostRegressor",
+        "R-Squared": 0.554090280922384,
+        "RMSE": 170.69544267874406
+      },
+      {
+        "Model": "LGBMRegressor",
+        "R-Squared": 0.5378565295151359,
+        "RMSE": 173.77482816675584
+      },
+      {
+        "Model": "ElasticNet",
+        "R-Squared": 0.5159701730842523,
+        "RMSE": 177.84207599503094
+      },
+      {
+        "Model": "GradientBoostingRegressor",
+        "R-Squared": 0.4392183730327651,
+        "RMSE": 191.4235407989044
+      },
+      {
+        "Model": "Lasso",
+        "R-Squared": 0.4222179167359621,
+        "RMSE": 194.3034412305013
+      },
+      {
+        "Model": "LassoLars",
+        "R-Squared": 0.40008202847180774,
+        "RMSE": 197.99051856465803
+      },
+      {
+        "Model": "RandomForestRegressor",
+        "R-Squared": 0.27207071354828716,
+        "RMSE": 218.0936662869817
+      }
+    ],
+    "fit_seconds": 1.2990942001342773,
+    "n_trials_complete": 40
+  }
+}

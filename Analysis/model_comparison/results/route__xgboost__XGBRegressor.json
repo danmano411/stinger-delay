@@ -1,0 +1,29 @@
+{
+  "id": "route__xgboost__XGBRegressor",
+  "dataset": "route",
+  "family": "xgboost",
+  "model": "XGBRegressor",
+  "r2": 0.44870378709207226,
+  "mae": 139.20992878202182,
+  "rmse": 180.6086277807895,
+  "n_test": 16998,
+  "params": {
+    "learning_rate": 0.11377755786490915,
+    "max_depth": 5,
+    "min_child_weight": 3.61991287736887,
+    "subsample": 0.751232938445368,
+    "colsample_bytree": 0.8698302638830958,
+    "reg_alpha": 1.1707220996491248e-06,
+    "reg_lambda": 0.007278651135355252,
+    "gamma": 3.8656982914627043,
+    "objective": "reg:pseudohubererror",
+    "n_estimators": 9
+  },
+  "cv_mae": null,
+  "smoke": false,
+  "threads": 2,
+  "extra": {
+    "n_trials_complete": 60,
+    "best_trial_val_mae": 191.93161271296725
+  }
+}

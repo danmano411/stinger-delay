@@ -1,0 +1,96 @@
+{
+  "id": "route__lazy__AdaBoostRegressor",
+  "dataset": "route",
+  "family": "lazy",
+  "model": "AdaBoostRegressor",
+  "r2": 0.3595354517119459,
+  "mae": 157.69492517135188,
+  "rmse": 194.6675378670606,
+  "n_test": 16998,
+  "params": {
+    "n_estimators": 106,
+    "learning_rate": 0.018516142991749522,
+    "loss": "square"
+  },
+  "cv_mae": 202.57309669172597,
+  "smoke": false,
+  "threads": 2,
+  "extra": {
+    "screen_rank": 2,
+    "screen_val_r2": 0.2616445303979671,
+    "leaderboard_top10": [
+      {
+        "Model": "ExtraTreesRegressor",
+        "Adjusted R-Squared": 0.3021082283506814,
+        "R-Squared": 0.30711061977940635,
+        "RMSE": 272.38212369381733,
+        "Time Taken": 11.96883225440979
+      },
+      {
+        "Model": "AdaBoostRegressor",
+        "Adjusted R-Squared": 0.2563138915140035,
+        "R-Squared": 0.2616445303979671,
+        "RMSE": 281.17674386230823,
+        "Time Taken": 2.188838005065918
+      },
+      {
+        "Model": "LGBMRegressor",
+        "Adjusted R-Squared": 0.2394629547705196,
+        "R-Squared": 0.24491437883200773,
+        "RMSE": 284.34444566344644,
+        "Time Taken": 0.26105213165283203
+      },
+      {
+        "Model": "GradientBoostingRegressor",
+        "Adjusted R-Squared": 0.2307202018210871,
+        "R-Squared": 0.2362342927231863,
+        "RMSE": 285.9741162424589,
+        "Time Taken": 4.89196252822876
+      },
+      {
+        "Model": "HistGradientBoostingRegressor",
+        "Adjusted R-Squared": 0.2222750034081833,
+        "R-Squared": 0.22784962832124345,
+        "RMSE": 287.5395518577215,
+        "Time Taken": 0.606924295425415
+      },
+      {
+        "Model": "RandomForestRegressor",
+        "Adjusted R-Squared": 0.1916342672760264,
+        "R-Squared": 0.19742852073612482,
+        "RMSE": 293.1490629233481,
+        "Time Taken": 13.974111318588257
+      },
+      {
+        "Model": "KNeighborsRegressor",
+        "Adjusted R-Squared": 0.19022347801448525,
+        "R-Squared": 0.1960278438163484,
+        "RMSE": 293.404758610047,
+        "Time Taken": 0.385282039642334
+      },
+      {
+        "Model": "BaggingRegressor",
+        "Adjusted R-Squared": 0.1637620231241338,
+        "R-Squared": 0.16975606096471763,
+        "RMSE": 298.1600867055412,
+        "Time Taken": 1.4491362571716309
+      },
+      {
+        "Model": "DecisionTreeRegressor",
+        "Adjusted R-Squared": 0.08253505665855543,
+        "R-Squared": 0.0891113181294142,
+        "RMSE": 312.30526226239493,
+        "Time Taken": 0.30585241317749023
+      },
+      {
+        "Model": "ExtraTreeRegressor",
+        "Adjusted R-Squared": -0.0074540654245005555,
+        "R-Squared": -0.00023277440712199393,
+        "RMSE": 327.26321275731584,
+        "Time Taken": 0.19498991966247559
+      }
+    ],
+    "n_trials_complete": 40,
+    "fit_seconds": 13.573623657226562
+  }
+}

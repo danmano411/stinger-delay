@@ -1,0 +1,8 @@
+[N1] X_tr (50096, 50)  X_val (31162, 50)  X_test (29141, 50)  n_features=50
+[N4] best trial value=195.64s  params={'width': 256, 'depth': 3, 'dropout': 0.2170784332632994, 'beta': 1.0, 'lr': 0.00012886065671894017, 'wd': 0.008862326508576254, 'batch_size': 256, 'scheduler': 'onecycle'}
+[N4] trials: 16 complete, 14 pruned
+[N5] 5-seed ensemble inner-val MAE 196.23s (members: [200.0, 211.2, 205.9, 193.4, 224.6])
+[combined__nn__MLP] test R2=0.1806  MAE=176.1s  RMSE=252.2s  (n=29141)
+[N6] final metrics table:
+  dataset  family model       r2      mae     rmse
+  combined nn  MLP    0.1806    176.1    252.2

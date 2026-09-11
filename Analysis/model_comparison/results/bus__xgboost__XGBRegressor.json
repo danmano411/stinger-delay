@@ -1,0 +1,29 @@
+{
+  "id": "bus__xgboost__XGBRegressor",
+  "dataset": "bus",
+  "family": "xgboost",
+  "model": "XGBRegressor",
+  "r2": 0.37954642245860826,
+  "mae": 143.14134052563892,
+  "rmse": 182.89886590869477,
+  "n_test": 7536,
+  "params": {
+    "learning_rate": 0.027958770642568097,
+    "max_depth": 8,
+    "min_child_weight": 10.708566970230391,
+    "subsample": 0.8113028660277415,
+    "colsample_bytree": 0.9456776047963565,
+    "reg_alpha": 0.13827598801443727,
+    "reg_lambda": 0.0047326334552908154,
+    "gamma": 4.516733116301539,
+    "objective": "reg:pseudohubererror",
+    "n_estimators": 2296
+  },
+  "cv_mae": null,
+  "smoke": false,
+  "threads": 2,
+  "extra": {
+    "n_trials_complete": 60,
+    "best_trial_val_mae": 96.7812181520606
+  }
+}
